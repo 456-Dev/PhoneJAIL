@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Usage: sudo python3 play_mp3_buzzer.py <mp3_file> [GPIO_pin] [carrier_frequency_Hz]
+Usage: sudo python3 play_mp3_buzzer.py [GPIO_pin] [carrier_frequency_Hz]
 Defaults:
+  Audio file: pizza.mp3 (in the same folder)
   GPIO_pin: 18
   carrier_frequency_Hz: 2500
 
-This script plays an MP3 file through a piezo buzzer connected to a Raspberry Pi.
-The buzzer is assumed to have its negative terminal connected to ground and its positive terminal
-connected to a GPIO pin. Because passive piezo buzzers cannot reproduce full audio detail,
-this script reproduces the loudness envelope of the MP3 by modulating the duty cycle of a fixed-tone PWM.
-Before running the script, install the required packages with:
+This script plays the hardcoded MP3 file (pizza.mp3) through a piezo buzzer connected to a Raspberry Pi.
+The buzzer is assumed to have its negative terminal connected to ground and its positive terminal connected to a GPIO pin.
+Because passive piezo buzzers cannot faithfully reproduce full audio detail, the script modulates the duty cycle of a fixed-tone PWM
+to approximate the MP3's loudness envelope.
+Before running the script, install required packages:
   pip install pigpio pydub numpy
-and start the pigpio daemon using:
+and start the pigpio daemon:
   sudo pigpiod
 """
 
@@ -22,13 +23,12 @@ import pigpio
 from pydub import AudioSegment
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: sudo python3 play_mp3_buzzer.py <mp3_file> [GPIO_pin] [carrier_frequency_Hz]")
-        sys.exit(1)
+    # Hardcoded audio file (must be in the same folder as this script)
+    mp3_file = "pizza.mp3"
     
-    mp3_file = sys.argv[1]
-    gpio_pin = int(sys.argv[2]) if len(sys.argv) > 2 else 18  # default GPIO pin 18
-    carrier_freq = int(sys.argv[3]) if len(sys.argv) > 3 else 2500  # default 2500 Hz (adjust for your buzzer)
+    # Optional command-line parameters for GPIO pin and carrier frequency
+    gpio_pin = int(sys.argv[1]) if len(sys.argv) > 1 else 18      # default GPIO pin 18
+    carrier_freq = int(sys.argv[2]) if len(sys.argv) > 2 else 2500  # default 2500 Hz
 
     # Connect to the pigpio daemon
     pi = pigpio.pi()
@@ -40,7 +40,6 @@ def main():
     pi.set_PWM_frequency(gpio_pin, carrier_freq)
 
     # Load the MP3 file and downsample it to extract a rough envelope.
-    # Convert to mono and lower the sample rate to drive the PWM update loop.
     try:
         audio = AudioSegment.from_mp3(mp3_file)
     except Exception as e:
@@ -48,19 +47,19 @@ def main():
         pi.stop()
         sys.exit(1)
     
+    # Convert audio to mono and downsample to 1000 Hz for envelope extraction
     audio = audio.set_channels(1)
-    # Downsample to 1000 Hz for envelope extraction (1000 samples per second)
     audio = audio.set_frame_rate(1000)
-
+    
     # Convert the audio samples to a NumPy array
     samples = np.array(audio.get_array_of_samples())
     sample_rate = audio.frame_rate  # should be 1000 Hz now
 
-    # Define a frame length in milliseconds (adjust resolution and smoothness)
+    # Define a frame length in milliseconds for envelope extraction
     frame_duration_ms = 50  # update roughly every 50 ms
     samples_per_frame = int((sample_rate * frame_duration_ms) / 1000)
     total_frames = len(samples) // samples_per_frame
-    max_duty = 255  # PWM duty cycle value ranges from 0 to 255
+    max_duty = 255  # PWM duty cycle range: 0 to 255
 
     print(f"Playing {mp3_file} on GPIO {gpio_pin} at {carrier_freq} Hz carrier ...")
     try:
@@ -71,7 +70,6 @@ def main():
             avg_amp = np.mean(np.abs(frame))
             # Normalize (assuming 16-bit samples; maximum is about 32768)
             duty_cycle = int((avg_amp / 32768) * max_duty)
-            # Clamp the duty cycle to the maximum
             if duty_cycle > max_duty:
                 duty_cycle = max_duty
             # Set the PWM duty cycle accordingly
