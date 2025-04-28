@@ -21,6 +21,26 @@ import time
 import numpy as np
 import pigpio
 from pydub import AudioSegment
+import machine
+import utime
+
+# Configure ADC objects for the joystick axes:
+# VRx (GP27 / ADC1) controls the frequency.
+adc_freq = machine.ADC(27)
+# VRy (GP26 / ADC0) controls the volume.
+adc_vol = machine.ADC(26)
+
+# Configure the joystick button if needed (SW on GP16).
+joystick_button = machine.Pin(16, machine.Pin.IN, machine.Pin.PULL_UP)
+
+# Configure the PWM output for the piezo buzzer.
+# Change this pin if your buzzer is connected elsewhere.
+buzzer_pin = machine.Pin(15)
+buzzer_pwm = machine.PWM(buzzer_pin)
+
+# Mapping helper function: linearly maps x from [in_min, in_max] to [out_min, out_max].
+def map_range(x, in_min, in_max, out_min, out_max):
+    return int((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
 
 def main():
     # Hardcoded audio file (should be in the same folder as this script)
@@ -90,6 +110,30 @@ def main():
         pi.set_PWM_dutycycle(gpio_pin, 0)
         pi.stop()
         print("Playback finished.")
+
+    # On the Pico, ADC readings (read_u16) return a value in the range 0 to 65535.
+    # For PWM in MicroPython, duty is set using duty_u16 (0 to 65535).
+    while True:
+        # Read the ADC values.
+        freq_val = adc_freq.read_u16()  # value from 0 to 65535 controlling frequency
+        vol_val = adc_vol.read_u16()    # value from 0 to 65535 controlling volume
+
+        # Map the frequency ADC reading to a frequency range.
+        freq = map_range(freq_val, 0, 65535, 100, 3000)
+        # Map the volume ADC reading directly as duty cycle.
+        duty = map_range(vol_val, 0, 65535, 0, 65535)
+
+        # Set the new frequency and duty cycle on the buzzer.
+        buzzer_pwm.freq(freq)
+        buzzer_pwm.duty_u16(duty)
+        
+        # Optional: read the joystick button.
+        # If the button is pressed (value goes low), you could add extra functionality.
+        # if not joystick_button.value():
+        #     print("Joystick button pressed!")
+        
+        # Update at a 50 ms interval.
+        utime.sleep(0.05)
 
 if __name__ == '__main__':
     main() 
