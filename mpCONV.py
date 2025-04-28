@@ -6,10 +6,10 @@ Defaults:
   GPIO_pin: 18
   carrier_frequency_Hz: 2500
 
-This script plays the hardcoded MP3 file (pizza.mp3) through a piezo buzzer connected to a Raspberry Pi.
-The buzzer is assumed to have its negative terminal connected to ground and its positive terminal connected to a GPIO pin.
-Because passive piezo buzzers cannot faithfully reproduce full audio detail, the script modulates the duty cycle of a fixed-tone PWM
-to approximate the MP3's loudness envelope.
+This script plays the hardcoded MP3 file (pizza.mp3) through a piezo buzzer
+connected to a Raspberry Pi. It uses a fixed PWM carrier tone and modulates its duty
+cycle based on the audio amplitude envelope. An exponential moving average is applied
+to smooth abrupt amplitude changes, resulting in a slightly more natural output.
 Before running the script, install required packages:
   pip install pigpio pydub numpy
 and start the pigpio daemon:
@@ -23,10 +23,10 @@ import pigpio
 from pydub import AudioSegment
 
 def main():
-    # Hardcoded audio file (must be in the same folder as this script)
+    # Hardcoded audio file (should be in the same folder as this script)
     mp3_file = "pizza.mp3"
     
-    # Optional command-line parameters for GPIO pin and carrier frequency
+    # Optional command-line parameters: GPIO pin and carrier frequency
     gpio_pin = int(sys.argv[1]) if len(sys.argv) > 1 else 18      # default GPIO pin 18
     carrier_freq = int(sys.argv[2]) if len(sys.argv) > 2 else 2500  # default 2500 Hz
 
@@ -36,7 +36,7 @@ def main():
         print("Could not connect to pigpio daemon. Make sure to run 'sudo pigpiod'.")
         sys.exit(1)
     
-    # Set the PWM frequency for the buzzer output
+    # Set the PWM carrier frequency for the buzzer output
     pi.set_PWM_frequency(gpio_pin, carrier_freq)
 
     # Load the MP3 file and downsample it to extract a rough envelope.
@@ -53,13 +53,17 @@ def main():
     
     # Convert the audio samples to a NumPy array
     samples = np.array(audio.get_array_of_samples())
-    sample_rate = audio.frame_rate  # should be 1000 Hz now
+    sample_rate = audio.frame_rate  # should be 1000 Hz
 
-    # Define a frame length in milliseconds for envelope extraction
-    frame_duration_ms = 50  # update roughly every 50 ms
+    # Define a frame length in milliseconds (update roughly every 50 ms)
+    frame_duration_ms = 50
     samples_per_frame = int((sample_rate * frame_duration_ms) / 1000)
     total_frames = len(samples) // samples_per_frame
     max_duty = 255  # PWM duty cycle range: 0 to 255
+
+    # Smoothing parameters for exponential moving average:
+    alpha = 0.2  # Smoothing factor (0 < alpha <= 1). Lower values yield smoother transitions.
+    smoothed_duty = 0  # Initialize smoothed duty cycle
 
     print(f"Playing {mp3_file} on GPIO {gpio_pin} at {carrier_freq} Hz carrier ...")
     try:
@@ -68,13 +72,16 @@ def main():
             frame = samples[i * samples_per_frame : (i+1) * samples_per_frame]
             # Compute the average absolute amplitude (the envelope)
             avg_amp = np.mean(np.abs(frame))
-            # Normalize (assuming 16-bit samples; maximum is about 32768)
-            duty_cycle = int((avg_amp / 32768) * max_duty)
-            if duty_cycle > max_duty:
-                duty_cycle = max_duty
-            # Set the PWM duty cycle accordingly
-            pi.set_PWM_dutycycle(gpio_pin, duty_cycle)
-            # Wait for the frame duration
+            # Normalize the amplitude to determine duty cycle (assuming 16-bit samples; max ~32768)
+            measured_duty = int((avg_amp / 32768) * max_duty)
+            if measured_duty > max_duty:
+                measured_duty = max_duty
+
+            # Apply exponential moving average to smooth the duty cycle transitions
+            smoothed_duty = int(alpha * measured_duty + (1 - alpha) * smoothed_duty)
+
+            # Update the PWM duty cycle accordingly
+            pi.set_PWM_dutycycle(gpio_pin, smoothed_duty)
             time.sleep(frame_duration_ms / 1000.0)
     except KeyboardInterrupt:
         print("Playback interrupted by user.")
@@ -85,4 +92,4 @@ def main():
         print("Playback finished.")
 
 if __name__ == '__main__':
-    main()
+    main() 
