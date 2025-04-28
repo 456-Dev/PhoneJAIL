@@ -120,6 +120,10 @@ def main():
                 final_duty = max_duty
             pi.set_PWM_dutycycle(gpio_pin, final_duty)
             
+            # Print joystick and mapping values for debugging.
+            print(f"Joystick X: {js_x:.3f}, Joystick Y: {js_y:.3f} | Volume scale: {volume_scale:.2f}, "
+                  f"Freq mod offset: {freq_mod_offset:.2f} | Curr freq: {current_freq} Hz, Final duty: {final_duty}")
+            
             # Wait for the next frame.
             time.sleep(frame_duration_ms / 1000.0)
     except KeyboardInterrupt:
