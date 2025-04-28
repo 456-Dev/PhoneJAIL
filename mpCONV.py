@@ -32,8 +32,8 @@ def map_range(x, in_min, in_max, out_min, out_max):
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
 def main():
-    # Use "On.mp3" from the current folder
-    mp3_file = "On.mp3"
+    # Use "pizza.mp3" from the current folder
+    mp3_file = "pizza.mp3"
     
     # Optional command-line parameters:
     # GPIO_pin: output pin for the PWM driving the buzzer (default 18)
